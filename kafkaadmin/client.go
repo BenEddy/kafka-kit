@@ -39,6 +39,7 @@ type Config struct {
 	SASLMechanism    string
 	SASLUsername     string
 	SASLPassword     string
+	RdkafkaOpts      map[string]string
 }
 
 // NewClient returns a KafkaAdmin.
@@ -94,6 +95,11 @@ func cfgToConfigMap(cfg Config) (*kafka.ConfigMap, error) {
 		kafkaCfg.SetKey("sasl.username", cfg.SASLUsername)
 		kafkaCfg.SetKey("sasl.password", cfg.SASLPassword)
 	}
+
+	for cfg, val := range cfg.RdkafkaOpts {
+		kafkaCfg.SetKey(cfg, val)
+	}
+
 	return kafkaCfg, nil
 }
 

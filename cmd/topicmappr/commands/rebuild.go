@@ -154,7 +154,7 @@ func rebuild(cmd *cobra.Command, _ []string) {
 
 	// Init kafkaadmin client.
 	bs := cmd.Parent().Flag("kafka-addr").Value.String()
-	ka, err := kafkaadmin.NewClient(kafkaadmin.Config{BootstrapServers: bs})
+	ka, err := kafkaadmin.NewClient(kafkaadmin.Config{BootstrapServers: bs, RdkafkaOpts: rdkafkaOpts()})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
