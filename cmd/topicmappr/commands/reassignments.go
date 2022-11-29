@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/kafka-kit/v4/kafkaadmin"
-	"github.com/DataDog/kafka-kit/v4/kafkazk"
 	"github.com/DataDog/kafka-kit/v4/mapper"
 
 	"github.com/spf13/cobra"
@@ -49,6 +47,7 @@ type reassignParams struct {
 	topicsExclude          []*regexp.Regexp
 	requireNewBrokers      bool
 	verbose                bool
+	metadataFile           string
 }
 
 func (s reassignParams) UseFixedTolerance() bool { return s.tolerance != 0.00 }
@@ -78,30 +77,32 @@ func reassignParamsFromCmd(cmd *cobra.Command) (params reassignParams) {
 	params.topicsExclude = topicRegex(topicsExclude)
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	params.verbose = verbose
+	metadataFile, _ := cmd.Flags().GetString("metadata-file")
+	params.metadataFile = metadataFile
 	return params
 }
 
-func reassign(params reassignParams, ka kafkaadmin.KafkaAdmin, zk kafkazk.Handler) ([]*mapper.PartitionMap, []error) {
+func reassign(params reassignParams, meta metadataProvider) ([]*mapper.PartitionMap, []error) {
 	// Get broker and partition metadata.
-	if err := checkMetaAge(zk, params.maxMetadataAge); err != nil {
+	if err := meta.checkMetaAge(params.maxMetadataAge); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	brokerMeta, errs := getBrokerMeta(ka, zk, true)
+	brokerMeta, errs := meta.getBrokerMeta(false)
 	if errs != nil && brokerMeta == nil {
 		for _, e := range errs {
 			fmt.Println(e)
 		}
 		os.Exit(1)
 	}
-	partitionMeta, err := getPartitionMeta(zk)
+	partitionMeta, err := meta.getPartitionMeta()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
 	// Get the current partition map.
-	partitionMapIn, err := getPartitionMaps(ka, params.topics)
+	partitionMapIn, err := meta.getPartitionMaps(params.topics)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

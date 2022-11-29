@@ -15,10 +15,10 @@ var (
 	topicNormalChar = regexp.MustCompile(`[a-zA-Z0-9_\\-]`)
 )
 
-// stringsToRegex takes a []string of topic names and returns a []*regexp.Regexp.
+// StringsToRegex takes a []string of topic names and returns a []*regexp.Regexp.
 // The values are either a string literal and become ^value$ or are regex and
 // compiled then added.
-func stringsToRegex(names []string) ([]*regexp.Regexp, error) {
+func StringsToRegex(names []string) ([]*regexp.Regexp, error) {
 	var out []*regexp.Regexp
 
 	// Update string literals to ^value$ regex.

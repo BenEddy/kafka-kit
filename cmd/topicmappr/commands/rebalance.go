@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/DataDog/kafka-kit/v4/kafkaadmin"
-
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +32,7 @@ func init() {
 	rebalanceCmd.Flags().Bool("verbose", false, "Verbose output")
 	rebalanceCmd.Flags().Int("metrics-age", 60, "Kafka metrics age tolerance (in minutes)")
 	rebalanceCmd.Flags().Bool("optimize-leadership", false, "Rebalance all broker leader/follower ratios")
+	rebalanceCmd.Flags().String("metadata-file", "", "A JSON file containing kafka metadata. Used to avoid querying kafka/zookeeper.")
 
 	// Required.
 	rebalanceCmd.MarkFlagRequired("brokers")
@@ -44,27 +44,46 @@ func rebalance(cmd *cobra.Command, _ []string) {
 	params := reassignParamsFromCmd(cmd)
 	params.requireNewBrokers = false
 
-	// ZooKeeper init.
-	zkAddr := cmd.Parent().Flag("zk-addr").Value.String()
-	kafkaPrefix := cmd.Parent().Flag("zk-prefix").Value.String()
-	metricsPrefix := cmd.Flag("zk-metrics-prefix").Value.String()
-	zk, err := initZooKeeper(zkAddr, kafkaPrefix, metricsPrefix)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	var meta metadataProvider
+	if params.metadataFile != "" {
+		data, err := os.ReadFile(params.metadataFile)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		meta, err = newStaticMetadataProvider(data)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	} else {
+		// ZooKeeper init.
+		zkAddr := cmd.Parent().Flag("zk-addr").Value.String()
+		kafkaPrefix := cmd.Parent().Flag("zk-prefix").Value.String()
+		metricsPrefix := cmd.Flag("zk-metrics-prefix").Value.String()
+		zk, err := initZooKeeper(zkAddr, kafkaPrefix, metricsPrefix)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		defer zk.Close()
+
+		// Init kafkaadmin client.
+		bs := cmd.Parent().Flag("kafka-addr").Value.String()
+		ka, err := kafkaadmin.NewClient(kafkaadmin.Config{BootstrapServers: bs})
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		meta = &defaultMetadataProvider{
+			zk: zk,
+			ka: ka,
+		}
 	}
 
-	defer zk.Close()
-
-	// Init kafkaadmin client.
-	bs := cmd.Parent().Flag("kafka-addr").Value.String()
-	ka, err := kafkaadmin.NewClient(kafkaadmin.Config{BootstrapServers: bs})
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	partitionMaps, errs := reassign(params, ka, zk)
+	partitionMaps, errs := reassign(params, meta)
 
 	// Handle errors that are possible to be overridden by the user (aka 'WARN'
 	// in topicmappr console output).

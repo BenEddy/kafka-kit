@@ -48,6 +48,7 @@ func init() {
 	rebuildCmd.Flags().String("leader-evac-brokers", "", "Broker list to remove leadership for topics in leader-evac-topics.")
 	rebuildCmd.Flags().String("leader-evac-topics", "", "Topics list to remove leadership for the brokers given in leader-evac-brokers")
 	rebuildCmd.Flags().Int("chunk-step-size", 0, "Number of brokers to move data at a time for with a chunked operation.")
+	rebuildCmd.Flags().String("metadata-file", "", "A JSON file containing kafka metadata. Used to avoid querying kafka/zookeeper.")
 
 	// Required.
 	rebuildCmd.MarkFlagRequired("brokers")
@@ -73,6 +74,7 @@ type rebuildParams struct {
 	leaderEvacTopics    []string
 	leaderEvacBrokers   []int
 	chunkStepSize       int
+	metadataFile        string
 }
 
 func rebuildParamsFromCmd(cmd *cobra.Command) (params rebuildParams) {
@@ -118,6 +120,8 @@ func rebuildParamsFromCmd(cmd *cobra.Command) (params rebuildParams) {
 	if leb != "" {
 		params.leaderEvacBrokers = brokerStringToSlice(leb)
 	}
+	metadataFile, _ := cmd.Flags().GetString("metadata-file")
+	params.metadataFile = metadataFile
 	return params
 }
 
@@ -152,29 +156,47 @@ func rebuild(cmd *cobra.Command, _ []string) {
 		fmt.Println("\n[INFO] --force-rebuild disables --sub-affinity")
 	}
 
-	// Init kafkaadmin client.
-	bs := cmd.Parent().Flag("kafka-addr").Value.String()
-	ka, err := kafkaadmin.NewClient(kafkaadmin.Config{BootstrapServers: bs})
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// ZooKeeper init.
-	var zk kafkazk.Handler
-	if params.useMetadata || len(params.topics) > 0 || params.placement == "storage" {
-		zkAddr := cmd.Parent().Flag("zk-addr").Value.String()
-		kafkaPrefix := cmd.Parent().Flag("zk-prefix").Value.String()
-		metricsPrefix := cmd.Flag("zk-metrics-prefix").Value.String()
-		zk, err = initZooKeeper(zkAddr, kafkaPrefix, metricsPrefix)
+	var meta metadataProvider
+	if params.metadataFile != "" {
+		data, err := os.ReadFile(params.metadataFile)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		defer zk.Close()
-	}
+		meta, err = newStaticMetadataProvider(data)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+	} else {
+		// Init kafkaadmin client.
+		bs := cmd.Parent().Flag("kafka-addr").Value.String()
+		ka, err := kafkaadmin.NewClient(kafkaadmin.Config{BootstrapServers: bs})
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
 
-	maps, errs := runRebuild(params, ka, zk)
+		// ZooKeeper init.
+		var zk kafkazk.Handler
+		if params.useMetadata || len(params.topics) > 0 || params.placement == "storage" {
+			zkAddr := cmd.Parent().Flag("zk-addr").Value.String()
+			kafkaPrefix := cmd.Parent().Flag("zk-prefix").Value.String()
+			metricsPrefix := cmd.Flag("zk-metrics-prefix").Value.String()
+			zk, err = initZooKeeper(zkAddr, kafkaPrefix, metricsPrefix)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			defer zk.Close()
+		}
+
+		meta = &defaultMetadataProvider{
+			zk: zk,
+			ka: ka,
+		}
+	}
+	maps, errs := runRebuild(params, meta)
 
 	// Print error/warnings.
 	handleOverridableErrs(cmd, errs)

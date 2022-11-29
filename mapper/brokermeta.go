@@ -9,14 +9,14 @@ type BrokerMetaMap map[int]*BrokerMeta
 
 // BrokerMeta holds metadata that describes a broker.
 type BrokerMeta struct {
-	StorageFree       float64 // In bytes.
+	StorageFree       float64 `json:"storage_free"` // In bytes.
 	MetricsIncomplete bool
 	// Metadata from the Kafka cluster state.
-	Host                       string
-	Port                       int
-	Rack                       string
-	LogMessageFormat           string
-	InterBrokerProtocolVersion string
+	Host                       string `json:"host"`
+	Port                       int    `json:"port"`
+	Rack                       string `json:"rack"`
+	LogMessageFormat           string `json:"log_message_format"`
+	InterBrokerProtocolVersion string `json:"inter_broker_protocol_version"`
 }
 
 // Copy returns a copy of a BrokerMetaMap.

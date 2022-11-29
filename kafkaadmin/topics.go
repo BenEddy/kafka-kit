@@ -60,7 +60,7 @@ func (c Client) DescribeTopics(ctx context.Context, topics []string) (TopicState
 	}
 
 	// Strip topics that don't match any of the specified names.
-	topicNamesRegex, err := stringsToRegex(topics)
+	topicNamesRegex, err := StringsToRegex(topics)
 	if err != nil {
 		return nil, err
 	}
